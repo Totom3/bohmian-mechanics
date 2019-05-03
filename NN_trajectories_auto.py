@@ -86,7 +86,6 @@ directory = "tracks"
 
 asps = []
 
-# for i in range(1000):
 for file in files("./{}/".format(directory)):
     asps.append(file)
 
