@@ -89,28 +89,27 @@ asps = []
 for file in files("./{}/".format(directory)):
     asps.append(file)
 
-for i in range(10000):
+for epoch in range(0, 500000_000+1):
     ranfi = random.choice(asps)
-    print("file name:" + ranfi)
     x = np.load(("./{}/".format(directory) + ranfi))
-    for epoch in range(0, 10_000+1):
-        optimizer.zero_grad()
+    optimizer.zero_grad()
     
-        data, true_next = batch(x)
-        data = torch.from_numpy(data).cuda()
-        true_next = torch.from_numpy(true_next).cuda()
+    data, true_next = batch(x)
+    data = torch.from_numpy(data).cuda()
+    true_next = torch.from_numpy(true_next).cuda()
         
-        output = net(data)
+    output = net(data)
 
-        loss = criterion(output, true_next)
-        loss.backward()
-        optimizer.step()
-        if epoch % 2000 == 0:
-            print("Epoch "+ str(epoch) + ": "+("%.9f" % loss.data.item()))
+    loss = criterion(output, true_next)
+    loss.backward()
+    optimizer.step()
+    if epoch % 5000 == 0:
+        print("file name:" + ranfi)
+        print("Epoch "+ str(epoch) + ": "+("%.9f" % loss.data.item()))
 
     
-        if epoch % 5000 == 0:
-            for g in optimizer.param_groups:
-                g['lr'] = g['lr'] / 1.001
-            torch.save(net.state_dict(), "saves/tnet")
+    if epoch % 10000 == 0:
+        for g in optimizer.param_groups:
+            g['lr'] = g['lr'] / 1.001
+        torch.save(net.state_dict(), "saves/tnet")
 
