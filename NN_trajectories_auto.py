@@ -14,7 +14,8 @@ xf = 20. #right endpoint
 J = 5001 #number of space nodes
 Xgrid = np.linspace(xi, xf, J)
 
-x = np.load('tracks/try0.npy')
+x = np.load('tracks/gauss1.npy')
+x = x[:, :, 200:]
 
 nt = x.shape[1]
 N = x.shape[2]
@@ -23,51 +24,40 @@ batch_size = 60
 # make a random batch
 
 def batch(x):
-    batchy = np.zeros([batch_size, 2, nt, 3])
-    true_next = np.zeros([batch_size, nt, 1])
+    batchy = np.zeros([batch_size, 2, nt, 9])
+    df = np.zeros([batch_size, nt])
     for i in range(batch_size):
-        k = np.random.randint(0, N-3)
-        batchy[i, :, :, :] = x[:, :, k:k+3]
-        true_next[i, :, 0] = x[0, :, k+3]
-    return batchy, true_next
+        k = np.random.randint(0, N-9)
+        batchy[i, :, :, :] = x[:, :, k:k+9]
+        df[i, :] = x[0, :, k+9] - x[0, :, k+8]
+    return batchy, df
 
 class TNet(nn.Module):
 
     def __init__(self):
         super(TNet, self).__init__()
-        self.pad1 = nn.ReplicationPad2d((0, 0, 1, 1))
-        self.pad2 = nn.ReflectionPad2d((0, 0, 1, 1))
-        self.pad3 = nn.ReplicationPad1d(1)
-        self.pad4 = nn.ReflectionPad1d(1)
-        self.con1 = nn.Conv2d(2, 9, kernel_size = (3,3))
-        self.con2 = nn.Conv1d(9, 18, kernel_size = 3)
-        self.con3 = nn.Conv1d(18, 27, kernel_size = 3)
-        self.con4 = nn.Conv1d(27, 36, kernel_size = 3)
+        self.con1 = nn.Conv2d(2, 18, kernel_size = (1,5))
+        self.con2 = nn.Conv2d(18, 36, kernel_size = (1,5))
         self.nonlin = nn.SELU()
         self.drop = nn.Dropout(0.03)
-        self.fct = nn.Linear(36, 1)
+        self.fct = nn.Linear(nt, nt)
+        self.final = nn.Linear(36, 1)
 
 
     def forward(self, x):
-        x = 2*self.pad1(x) - self.pad2(x)
         x = self.con1(x)
-        x = torch.squeeze(x)
-        x = 2*self.pad3(x) - self.pad4(x)
         x = self.nonlin(x)
         x = self.drop(x)
         x = self.con2(x)
-        x = 2*self.pad3(x) - self.pad4(x)
-        x = self.nonlin(x)
-        x - self.drop(x)
-        x = self.con3(x)
-        x = 2*self.pad3(x) - self.pad4(x)
+        x = torch.squeeze(x, 3)
         x = self.nonlin(x)
         x = self.drop(x)
-        x = self.con4(x)
-        x = self.nonlin(x)
-        x - self.drop(x)
-        x = x.transpose(1,2)
         x = self.fct(x)
+        x = self.nonlin(x)
+        x = self.drop(x)
+        x = x.transpose(1,2)
+        x = self.final(x)
+        x = torch.squeeze(x, 2)
         return x
 
 
@@ -75,7 +65,7 @@ net = TNet()
 net = net.cuda()
 net.load_state_dict(torch.load('saves/tnet'))
 criterion = nn.MSELoss()
-optimizer = optim.Adam(net.parameters(), lr=0.00002)
+optimizer = optim.Adam(net.parameters(), lr=0.00006)
 
 def files(path):
     for file in os.listdir(path):
@@ -89,27 +79,30 @@ asps = []
 for file in files("./{}/".format(directory)):
     asps.append(file)
 
-for epoch in range(0, 500000_000+1):
+for epoch in range(0, 500_000+1):
     ranfi = random.choice(asps)
     x = np.load(("./{}/".format(directory) + ranfi))
-    optimizer.zero_grad()
-    
-    data, true_next = batch(x)
-    data = torch.from_numpy(data).cuda()
-    true_next = torch.from_numpy(true_next).cuda()
-        
-    output = net(data)
 
-    loss = criterion(output, true_next)
-    loss.backward()
-    optimizer.step()
-    if epoch % 5000 == 0:
+    for i in range(1000):
+        optimizer.zero_grad()
+    
+        data, df = batch(x)
+        data = torch.from_numpy(data).cuda()
+        df = torch.from_numpy(df).cuda()
+        
+        output = net(data)
+
+        loss = 1000000*criterion(output, df)
+        loss.backward()
+        optimizer.step()
+        
+    if epoch % 3 == 0:
         print("file name:" + ranfi)
         print("Epoch "+ str(epoch) + ": "+("%.9f" % loss.data.item()))
 
     
-    if epoch % 10000 == 0:
+    if epoch % 3 == 0:
         for g in optimizer.param_groups:
-            g['lr'] = g['lr'] / 1.001
+            g['lr'] = g['lr'] / 1.03
         torch.save(net.state_dict(), "saves/tnet")
 
